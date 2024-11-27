@@ -24,6 +24,7 @@
 
 volatile int onOff = 0;
 volatile int steps = 0;
+char IP_ADDR[100] = "3.86.191.26";
 
 int led_state = RED_STATE;
 int pressed = 0;
@@ -113,13 +114,14 @@ void setup()
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
-  WiFi.begin(ssid, pass);
-  // while (WiFi.status() != WL_CONNECTED)
-  // {
-  //   delay(500);
-  //   Serial.print(WiFi.status());
-  //   Serial.print(".");
-  // }
+  WiFi.begin("BoPhone", "mangobusiness0304;;");
+  Serial.print(pass);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(WiFi.status());
+    Serial.print(".");
+  }
   Serial.println("");
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
@@ -150,6 +152,10 @@ void setup()
   // err = http.get("3.86.191.26", 5000, login_template + user, NULL);
 }
 
+volatile int connected = 0;
+volatile int num_iters = 0;
+volatile float accel_comb = 0;
+
 void loop()
 {
   int err = 0;
@@ -158,26 +164,40 @@ void loop()
   HttpClient http(c);
 
   // std::string login_template = "?user=";
-  std::string user = "WALDO";
-  user = "?user" + user;
-  err1 = http.get("3.86.191.26", 5000, user.c_str(), NULL);
-  Serial.print(err1);
+  if(connected == 0) {
+    char user[100];
+    sprintf(user, "/login?user=%s", "waldo");
+    err1 = http.get(IP_ADDR, 5000, user, NULL);
+    Serial.print(err1);
+    ++connected;
+  }
 
-  Serial.print("\nAccelerometer:\n");
-  Serial.print(" X = ");
-  Serial.println(myIMU.readFloatAccelX(), 3);
-  Serial.print(" Y = ");
-  Serial.println(myIMU.readFloatAccelY(), 3);
-  Serial.print(" Z = ");
-  Serial.println(myIMU.readFloatAccelZ(), 3);
 
-  Serial.print("\nGyroscope:\n");
-  Serial.print(" X = ");
-  Serial.println(myIMU.readFloatGyroX(), 3);
-  Serial.print(" Y = ");
-  Serial.println(myIMU.readFloatGyroY(), 3);
-  Serial.print(" Z = ");
-  Serial.println(myIMU.readFloatGyroZ(), 3);
+  // Serial.print("\nAccelerometer:\n");
+  // Serial.print(" X = ");
+  // Serial.println(myIMU.readFloatAccelX(), 3);
+  // Serial.print(" Y = ");
+  // Serial.println(myIMU.readFloatAccelY(), 3);
+  // Serial.print(" Z = ");
+  // Serial.println(myIMU.readFloatAccelZ(), 3);
+
+  accel_comb += abs(myIMU.readFloatAccelX());
+
+  if(num_iters == 0) {
+    int res = static_cast<int>(accel_comb * 3);
+    char ret[100];
+    sprintf(ret, "/add-step?velocity=%d", res);
+    http.get(IP_ADDR, 5000, ret, NULL);
+    accel_comb = 0;
+  }
+
+  // Serial.print("\nGyroscope:\n");
+  // Serial.print(" X = ");
+  // Serial.println(myIMU.readFloatGyroX(), 3);
+  // Serial.print(" Y = ");
+  // Serial.println(myIMU.readFloatGyroY(), 3);
+  // Serial.print(" Z = ");
+  // Serial.println(myIMU.readFloatGyroZ(), 3);
 
   switch (led_state)
   {
@@ -197,14 +217,20 @@ void loop()
 
   if (digitalRead(BLUE_BUTTON) == HIGH)
   {
+    char val[100] = "/button-1";
+    http.get(IP_ADDR, 5000, val, NULL);
     Serial.print("BLUE IS PRESSED");
   }
   if (digitalRead(RED_BUTTON) == HIGH)
   {
+    char val[100] = "/button-2";
+    http.get(IP_ADDR, 5000, val, NULL);
     Serial.print("RED IS PRESSED");
   }
   if (digitalRead(YELLOW_BUTTON) == HIGH)
   {
+    char val[100] = "/button-3";
+    http.get(IP_ADDR, 5000, val, NULL);
     Serial.print("YELLOW IS PRESSED");
   }
 
@@ -220,79 +246,81 @@ void loop()
   //   }
   // }
 
-  if (abs(myIMU.readFloatGyroX()) + abs(myIMU.readFloatGyroY()) + abs(myIMU.readFloatGyroZ()) > 50)
-  {
-    steps++;
-  }
+  // if (abs(myIMU.readFloatGyroX()) + abs(myIMU.readFloatGyroY()) + abs(myIMU.readFloatGyroZ()) > 50)
+  // {
+  //   steps++;
+  // }
 
-  Serial.print("\nThermometer:\n");
-  Serial.print(" Degrees F = ");
-  Serial.println(myIMU.readTempF(), 3);
+  // Serial.print("\nThermometer:\n");
+  // Serial.print(" Degrees F = ");
+  // Serial.println(myIMU.readTempF(), 3);
 
-  err = http.get("3.86.191.26", 5000, "?var=i", NULL);
-  if (err == 0)
-  {
-    Serial.println("startedRequest ok");
-    err = http.responseStatusCode();
-    if (err >= 0)
-    {
-      Serial.print("Got status code: ");
-      Serial.println(err);
-      // Usually you'd check that the response code is 200 or a
-      // similar "success" code (200-299) before carrying on,
-      // but we'll print out whatever response we get
-      err = http.skipResponseHeaders();
-      if (err >= 0)
-      {
-        int bodyLen = http.contentLength();
-        Serial.print("Content length is: ");
-        Serial.println(bodyLen);
-        Serial.println();
-        Serial.println("Body returned follows:");
-        // Now we've got to the body, so we can print it out
-        unsigned long timeoutStart = millis();
-        char c;
-        // Whilst we haven't timed out & haven't reached the end of the body
-        while ((http.connected() || http.available()) &&
-               ((millis() - timeoutStart) < kNetworkTimeout))
-        {
-          if (http.available())
-          {
-            c = http.read();
-            // Print out this character
-            Serial.print(c);
-            bodyLen--;
-            // We read something, reset the timeout counter
-            timeoutStart = millis();
-          }
-          else
-          {
-            // We haven't got any data, so let's pause to allow some to
-            // arrive
-            delay(kNetworkDelay);
-          }
-        }
-      }
-      else
-      {
-        Serial.print("Failed to skip response headers: ");
-        Serial.println(err);
-      }
-    }
-    else
-    {
-      Serial.print("Getting response failed: ");
-      Serial.println(err);
-    }
-  }
-  else
-  {
-    Serial.print("Connect failed: ");
-    Serial.println(err);
-  }
+  // err = http.get("3.86.191.26", 5000, "?var=i", NULL);
+  // if (err == 0)
+  // {
+  //   Serial.println("startedRequest ok");
+  //   err = http.responseStatusCode();
+  //   if (err >= 0)
+  //   {
+  //     Serial.print("Got status code: ");
+  //     Serial.println(err);
+  //     // Usually you'd check that the response code is 200 or a
+  //     // similar "success" code (200-299) before carrying on,
+  //     // but we'll print out whatever response we get
+  //     err = http.skipResponseHeaders();
+  //     if (err >= 0)
+  //     {
+  //       int bodyLen = http.contentLength();
+  //       Serial.print("Content length is: ");
+  //       Serial.println(bodyLen);
+  //       Serial.println();
+  //       Serial.println("Body returned follows:");
+  //       // Now we've got to the body, so we can print it out
+  //       unsigned long timeoutStart = millis();
+  //       char c;
+  //       // Whilst we haven't timed out & haven't reached the end of the body
+  //       while ((http.connected() || http.available()) &&
+  //              ((millis() - timeoutStart) < kNetworkTimeout))
+  //       {
+  //         if (http.available())
+  //         {
+  //           c = http.read();
+  //           // Print out this character
+  //           Serial.print(c);
+  //           bodyLen--;
+  //           // We read something, reset the timeout counter
+  //           timeoutStart = millis();
+  //         }
+  //         else
+  //         {
+  //           // We haven't got any data, so let's pause to allow some to
+  //           // arrive
+  //           delay(kNetworkDelay);
+  //         }
+  //       }
+  //     }
+  //     else
+  //     {
+  //       Serial.print("Failed to skip response headers: ");
+  //       Serial.println(err);
+  //     }
+  //   }
+  //   else
+  //   {
+  //     Serial.print("Getting response failed: ");
+  //     Serial.println(err);
+  //   }
+  // }
+  // else
+  // {
+  //   Serial.print("Connect failed: ");
+  //   Serial.println(err);
+  // }
+  // // http.stop();
+  // // And just stop, now that we've tried a download
+
+  num_iters++;
+  num_iters %= 5;
+
   delay(500);
-  // http.stop();
-  // And just stop, now that we've tried a download
-
-  delay(1000);
 }
